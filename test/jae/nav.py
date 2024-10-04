@@ -1,24 +1,26 @@
 import os
-import sys
 import urllib.request
 import json
 import csv
 import time
+import torch
+from transformers import CLIPProcessor, CLIPModel
 
-client_id = "YOUR_CLIENT_ID"
-client_secret = "YOUR_CLIENT_SECRET"
-encText = urllib.parse.quote("검색할 단어")
+client_id = "fKOPWU2yFkCyiBPRbBiU"
+client_secret = "Whlf2LfCSw"
+encText = urllib.parse.quote("vietnam")
 
-# Số kết quả cần hiển thị (ví dụ 50)
+# Số kết quả cần hiển thị
 display = 50
-# Để lấy nhiều hơn 100 kết quả, bạn có thể sử dụng phân trang với start
 start = 1
-
-# API URL với các tham số display và start
 url = f"https://openapi.naver.com/v1/search/blog?query={encText}&display={display}&start={start}"
 request = urllib.request.Request(url)
 request.add_header("X-Naver-Client-Id", client_id)
 request.add_header("X-Naver-Client-Secret", client_secret)
+
+# Tải CLIP model và processor
+model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
 try:
     response = urllib.request.urlopen(request)
@@ -28,24 +30,38 @@ try:
         response_body = response.read()
         data = json.loads(response_body.decode('utf-8'))
 
-        # Tạo tên file dựa trên thời gian thực
+        # Tạo tên file
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         file_name = f"naver_blog_search_results_{timestamp}.csv"
 
-        # Lưu vào file CSV
+        # Lưu vào file CSV với URL ảnh
         with open(file_name, mode='w', newline='', encoding='utf-8') as csv_file:
-            fieldnames = ['title', 'link', 'description', 'bloggername', 'bloggerlink', 'postdate']
+            fieldnames = ['title', 'link', 'description', 'bloggername', 'bloggerlink', 'postdate', 'image_url', 'clip_score']
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-
             writer.writeheader()
+
             for item in data['items']:
+                title = item['title']
+                description = item['description']
+                
+                # Dùng CLIP để tính điểm phù hợp giữa tiêu đề và mô tả
+                inputs = processor(text=[title], images=None, return_tensors="pt", padding=True)
+                outputs = model.get_text_features(**inputs)
+                clip_score = outputs.norm().item()  # Điểm phù hợp
+
+                # URL ảnh (giả sử API cung cấp trong dữ liệu)
+                image_url = item.get('image_url', '')  # Nếu không có ảnh, sẽ là chuỗi trống
+
+                # Ghi dữ liệu vào file
                 writer.writerow({
-                    'title': item['title'],
+                    'title': title,
                     'link': item['link'],
-                    'description': item['description'],
+                    'description': description,
                     'bloggername': item['bloggername'],
                     'bloggerlink': item['bloggerlink'],
-                    'postdate': item['postdate']
+                    'postdate': item['postdate'],
+                    'image_url': image_url,
+                    'clip_score': clip_score
                 })
 
         print(f"Kết quả đã được lưu vào {file_name}")
